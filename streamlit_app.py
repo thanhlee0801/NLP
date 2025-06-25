@@ -6,6 +6,42 @@ from tensorflow.keras.models import load_model
 import joblib
 import os # Import os để kiểm tra sự tồn tại của file
 
+@st.cache_resource
+def load_resources():
+    try:
+        model_path = 'sentiment_naive_bayes_model.pkl' # Đổi tên file
+        vectorizer_path = 'tfidf_vectorizer.pkl'       # Đổi tên file
+        label_encoder_path = 'label_encoder.pkl'
+
+        if not all(os.path.exists(p) for p in [model_path, vectorizer_path, label_encoder_path]):
+            st.error("Lỗi: Không tìm thấy một hoặc nhiều file mô hình/tiền xử lý. Vui lòng đảm bảo các file này nằm cùng thư mục với streamlit_app.py")
+            st.stop()
+
+        model = joblib.load(model_path)
+        vectorizer = joblib.load(vectorizer_path) # Tải vectorizer
+        label_encoder = joblib.load(label_encoder_path)
+        st.success("Đã tải thành công mô hình Naive Bayes và các đối tượng.")
+        return model, vectorizer, label_encoder
+    except Exception as e:
+        st.error(f"Lỗi khi tải mô hình hoặc đối tượng: {e}")
+        st.stop()
+
+model, vectorizer, label_encoder = load_resources()
+
+def predict_sentiment(text, model, vectorizer, label_encoder): # Thay đổi tham số
+    # Chuyển đổi văn bản sang vector TF-IDF
+    text_features = vectorizer.transform([text])
+    predictions = model.predict(text_features)
+    probabilities = model.predict_proba(text_features)
+
+    predicted_sentiment = label_encoder.inverse_transform(predictions)[0]
+
+    probabilities_dict = {}
+    for i, label in enumerate(label_encoder.classes_):
+        probabilities_dict[label] = probabilities[0][i]
+
+    return predicted_sentiment, probabilities_dict
+    
 # --- 1. Tiêu đề ứng dụng ---
 st.title("Ứng dụng Dự đoán Cảm xúc Bình luận")
 st.write("Sử dụng mô hình CNN để phân loại cảm xúc (tích cực, tiêu cực, trung tính) của các bình luận.")
