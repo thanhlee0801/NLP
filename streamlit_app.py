@@ -1,35 +1,42 @@
 import streamlit as st
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import load_model
 import joblib
-import os # Import os để kiểm tra sự tồn tại của file
+import os
 
-@st.cache_resource
+# --- 1. Tiêu đề ứng dụng ---
+st.title("Ứng dụng Dự đoán Cảm xúc Bình luận")
+st.write("Sử dụng mô hình Naive Bayes để phân loại cảm xúc (tích cực, tiêu cực, trung tính) của các bình luận.")
+
+# --- 2. Tải mô hình và các đối tượng tiền xử lý ---
+@st.cache_resource # Sử dụng st.cache_resource để chỉ tải mô hình một lần
 def load_resources():
     try:
-        model_path = 'sentiment_naive_bayes_model.pkl' # Đổi tên file
-        vectorizer_path = 'tfidf_vectorizer.pkl'       # Đổi tên file
+        model_path = 'sentiment_naive_bayes_model.pkl'
+        vectorizer_path = 'tfidf_vectorizer.pkl' # Đổi tên biến từ tokenizer_path
         label_encoder_path = 'label_encoder.pkl'
 
+        # Kiểm tra sự tồn tại của các file
         if not all(os.path.exists(p) for p in [model_path, vectorizer_path, label_encoder_path]):
             st.error("Lỗi: Không tìm thấy một hoặc nhiều file mô hình/tiền xử lý. Vui lòng đảm bảo các file này nằm cùng thư mục với streamlit_app.py")
-            st.stop()
+            st.stop() # Dừng ứng dụng nếu file không tồn tại
 
         model = joblib.load(model_path)
-        vectorizer = joblib.load(vectorizer_path) # Tải vectorizer
+        vectorizer = joblib.load(vectorizer_path) # Tải TfidfVectorizer
         label_encoder = joblib.load(label_encoder_path)
         st.success("Đã tải thành công mô hình Naive Bayes và các đối tượng.")
-        return model, vectorizer, label_encoder
+        return model, vectorizer, label_encoder # Trả về vectorizer thay vì tokenizer và không có max_len
     except Exception as e:
         st.error(f"Lỗi khi tải mô hình hoặc đối tượng: {e}")
-        st.stop()
+        st.stop() # Dừng ứng dụng nếu có lỗi khi tải
 
-model, vectorizer, label_encoder = load_resources()
+# Gán các giá trị trả về từ load_resources
+model, vectorizer, label_encoder = load_resources() # Cập nhật các biến nhận
 
-def predict_sentiment(text, model, vectorizer, label_encoder): # Thay đổi tham số
-    # Chuyển đổi văn bản sang vector TF-IDF
+
+# --- 3. Hàm dự đoán cảm xúc ---
+# Chú ý: Thay đổi các tham số đầu vào của hàm
+def predict_sentiment(text, model, vectorizer, label_encoder):
+    # Chuyển đổi văn bản sang vector TF-IDF bằng vectorizer đã tải
     text_features = vectorizer.transform([text])
     predictions = model.predict(text_features)
     probabilities = model.predict_proba(text_features)
@@ -41,51 +48,6 @@ def predict_sentiment(text, model, vectorizer, label_encoder): # Thay đổi tha
         probabilities_dict[label] = probabilities[0][i]
 
     return predicted_sentiment, probabilities_dict
-    
-# --- 1. Tiêu đề ứng dụng ---
-st.title("Ứng dụng Dự đoán Cảm xúc Bình luận")
-st.write("Sử dụng mô hình CNN để phân loại cảm xúc (tích cực, tiêu cực, trung tính) của các bình luận.")
-
-# --- 2. Tải mô hình và các đối tượng tiền xử lý ---
-@st.cache_resource # Sử dụng st.cache_resource để chỉ tải mô hình một lần
-def load_resources():
-    try:
-        model_path = 'sentiment_cnn_model.h5'
-        tokenizer_path = 'tokenizer.pkl'
-        label_encoder_path = 'label_encoder.pkl'
-        max_len_path = 'max_len.pkl'
-
-        # Kiểm tra sự tồn tại của các file
-        if not all(os.path.exists(p) for p in [model_path, tokenizer_path, label_encoder_path, max_len_path]):
-            st.error("Lỗi: Không tìm thấy một hoặc nhiều file mô hình/tiền xử lý. Vui lòng đảm bảo các file này nằm cùng thư mục với streamlit_app.py")
-            st.stop() # Dừng ứng dụng nếu file không tồn tại
-
-        model = load_model(model_path)
-        tokenizer = joblib.load(tokenizer_path)
-        label_encoder = joblib.load(label_encoder_path)
-        max_len = joblib.load(max_len_path)
-        st.success("Đã tải thành công mô hình và các đối tượng.")
-        return model, tokenizer, label_encoder, max_len
-    except Exception as e:
-        st.error(f"Lỗi khi tải mô hình hoặc đối tượng: {e}")
-        st.stop() # Dừng ứng dụng nếu có lỗi khi tải
-
-model, tokenizer, label_encoder, max_len = load_resources()
-
-# --- 3. Hàm dự đoán cảm xúc ---
-def predict_sentiment(text, model, tokenizer, max_len, label_encoder):
-    sequences = tokenizer.texts_to_sequences([text])
-    padded = pad_sequences(sequences, maxlen=max_len, padding='post', truncating='post')
-    predictions = model.predict(padded)
-
-    predicted_labels_encoded = np.argmax(predictions, axis=1)
-    predicted_sentiment = label_encoder.inverse_transform(predicted_labels_encoded)[0]
-
-    probabilities_dict = {}
-    for i, label in enumerate(label_encoder.classes_):
-        probabilities_dict[label] = predictions[0][i]
-
-    return predicted_sentiment, probabilities_dict
 
 # --- 4. Giao diện người dùng Streamlit ---
 user_comment = st.text_area("Nhập bình luận của bạn vào đây:", height=150, placeholder="Ví dụ: Sản phẩm này thật tuyệt vời!")
@@ -93,7 +55,8 @@ user_comment = st.text_area("Nhập bình luận của bạn vào đây:", heigh
 if st.button("Dự đoán Cảm xúc"):
     if user_comment:
         st.spinner("Đang phân tích cảm xúc...")
-        sentiment, probabilities = predict_sentiment(user_comment, model, tokenizer, max_len, label_encoder)
+        # CHÚ Ý ĐÂY LÀ DÒNG BỊ LỖI TRƯỚC ĐÂY - Cập nhật cách gọi hàm predict_sentiment
+        sentiment, probabilities = predict_sentiment(user_comment, model, vectorizer, label_encoder)
 
         st.subheader("Kết quả Dự đoán:")
         st.write(f"**Bình luận:** \"{user_comment}\"")
