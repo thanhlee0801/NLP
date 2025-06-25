@@ -1,6 +1,8 @@
 import streamlit as st
 import numpy as np
-
+import tensorflow as tf
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import load_model
 import joblib
 import os # Import os để kiểm tra sự tồn tại của file
 
