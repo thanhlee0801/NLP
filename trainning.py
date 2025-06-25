@@ -1,13 +1,11 @@
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Embedding, Conv1D, GlobalMaxPooling1D, Dense, Dropout
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 import random
-import joblib
+import joblib # Để lưu/tải các đối tượng Python
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer # Thay thế Tokenizer và pad_sequences
+from sklearn.naive_bayes import MultinomialNB # Mô hình Naive Bayes
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report # Để đánh giá
 
 # --- 1. Tạo dữ liệu giả (Dummy Data) ---
 def generate_dummy_comments(num_comments=100):
@@ -38,7 +36,7 @@ def generate_dummy_comments(num_comments=100):
     neutral_comments = [
         "Sản phẩm đã được giao.",
         "Tôi đã nhận được hàng.",
-        "Cần thêm thông tin về sản phẩm.",
+        "Cần thêm thêm thông tin về sản phẩm.",
         "Đánh giá về chức năng cơ bản.",
         "Sản phẩm hoạt động đúng như mô tả.",
         "Chỉ là một sản phẩm bình thường.",
@@ -78,109 +76,100 @@ print(f"Ví dụ bình luận và nhãn:\n{comments[0]} - {labels[0]}\n{comments
 
 # --- 2. Tiền xử lý dữ liệu ---
 
-# Mã hóa nhãn cảm xúc thành số
+# Mã hóa nhãn cảm xúc thành số (Naive Bayes không cần one-hot encoding trực tiếp)
 label_encoder = LabelEncoder()
 encoded_labels = label_encoder.fit_transform(labels)
-num_classes = len(label_encoder.classes_)
 
-# Chuyển nhãn số thành dạng one-hot encoding
-one_hot_labels = tf.keras.utils.to_categorical(encoded_labels, num_classes=num_classes)
+print(f"\nCác nhãn được mã hóa: {label_encoder.classes_}")
 
-# Khởi tạo Tokenizer
-# oov_token giúp xử lý các từ không có trong từ điển
-tokenizer = Tokenizer(num_words=5000, oov_token="<unk>")
-tokenizer.fit_on_texts(comments)
+# Sử dụng TfidfVectorizer để chuyển đổi văn bản thành vector TF-IDF
+# Đây là bước quan trọng thay thế cho Tokenizer và pad_sequences của CNN
+vectorizer = TfidfVectorizer(max_features=5000) # Giới hạn số lượng đặc trưng
+X_features = vectorizer.fit_transform(comments)
 
-# Chuyển văn bản thành chuỗi số
-sequences = tokenizer.texts_to_sequences(comments)
-
-# Đệm chuỗi để có cùng độ dài
-# max_len có thể được điều chỉnh tùy thuộc vào độ dài bình luận của bạn
-max_len = max([len(seq) for seq in sequences])
-padded_sequences = pad_sequences(sequences, maxlen=max_len, padding='post', truncating='post')
-
-print(f"\nKích thước từ điển: {len(tokenizer.word_index)}")
-print(f"Độ dài chuỗi tối đa: {max_len}")
-print(f"Hình dạng của dữ liệu đã đệm: {padded_sequences.shape}")
-print(f"Hình dạng của nhãn one-hot: {one_hot_labels.shape}")
+print(f"\nSố lượng đặc trưng (từ vựng): {len(vectorizer.vocabulary_)}")
+print(f"Hình dạng của dữ liệu đã được vector hóa: {X_features.shape}")
 
 # Chia dữ liệu thành tập huấn luyện và tập kiểm tra
-X_train, X_test, y_train, y_test = train_test_split(padded_sequences, one_hot_labels, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X_features, encoded_labels, test_size=0.2, random_state=42)
 
 print(f"\nKích thước tập huấn luyện: {X_train.shape[0]}")
 print(f"Kích thước tập kiểm tra: {X_test.shape[0]}")
 
-# --- 3. Xây dựng mô hình CNN ---
+# --- 3. Xây dựng và huấn luyện mô hình Naive Bayes ---
 
-embedding_dim = 100 # Kích thước vector nhúng
-vocab_size = len(tokenizer.word_index) + 1 # Kích thước từ điển + 1 cho OOV token
+# Khởi tạo mô hình Multinomial Naive Bayes
+model = MultinomialNB()
 
-model = Sequential([
-    Embedding(vocab_size, embedding_dim, input_length=max_len),
-    Conv1D(filters=128, kernel_size=5, activation='relu'),
-    GlobalMaxPooling1D(),
-    Dense(64, activation='relu'),
-    Dropout(0.5), # Tăng cường khả năng tổng quát hóa
-    Dense(num_classes, activation='softmax') # Đầu ra là số lớp cảm xúc
-])
+# Huấn luyện mô hình
+model.fit(X_train, y_train)
 
-model.compile(optimizer='adam',
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
+print("\nQuá trình huấn luyện Naive Bayes hoàn tất.")
 
-model.summary()
-
-# --- 4. Huấn luyện mô hình ---
-
-epochs = 10 # Số epoch có thể được điều chỉnh
-batch_size = 32 # Kích thước batch
-
-history = model.fit(X_train, y_train,
-                    epochs=epochs,
-                    batch_size=batch_size,
-                    validation_split=0.1, # Chia nhỏ tập huấn luyện để xác thực
-                    verbose=1)
-
-print("\nQuá trình huấn luyện hoàn tất.")
-
-# --- 5. Đánh giá mô hình trên tập kiểm tra ---
-loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+# --- 4. Đánh giá mô hình trên tập kiểm tra ---
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
 print(f"\nĐộ chính xác trên tập kiểm tra: {accuracy*100:.2f}%")
 
-# --- 6. Dự đoán cảm xúc của các bình luận mới (ví dụ) ---
-def predict_sentiment(text_list, model, tokenizer, max_len, label_encoder):
-    sequences = tokenizer.texts_to_sequences(text_list)
-    padded = pad_sequences(sequences, maxlen=max_len, padding='post', truncating='post')
-    predictions = model.predict(padded)
-    # Lấy chỉ số của nhãn có xác suất cao nhất
-    predicted_labels_encoded = np.argmax(predictions, axis=1)
-    # Chuyển đổi lại về nhãn văn bản
-    predicted_labels = label_encoder.inverse_transform(predicted_labels_encoded)
-    return predicted_labels, predictions
+print("\nBáo cáo phân loại:")
+print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
 
-print("\n--- Dự đoán cảm xúc cho các bình luận mới ---")
+
+# --- 5. Lưu mô hình và các đối tượng tiền xử lý ---
+try:
+    # Lưu mô hình Naive Bayes
+    joblib.dump(model, 'sentiment_naive_bayes_model.pkl')
+    print("Đã lưu mô hình: sentiment_naive_bayes_model.pkl")
+
+    # Lưu TfidfVectorizer
+    joblib.dump(vectorizer, 'tfidf_vectorizer.pkl')
+    print("Đã lưu TfidfVectorizer: tfidf_vectorizer.pkl")
+
+    # Lưu LabelEncoder
+    joblib.dump(label_encoder, 'label_encoder.pkl')
+    print("Đã lưu label encoder: label_encoder.pkl")
+
+    print("\nQuá trình lưu file hoàn tất thành công.")
+except Exception as e:
+    print(f"Có lỗi xảy ra khi lưu file: {e}")
+
+# --- 6. Dự đoán cảm xúc của các bình luận mới (ví dụ) ---
+def predict_sentiment_nb(text_list, model, vectorizer, label_encoder):
+    # Chuyển đổi văn bản mới sang vector TF-IDF bằng vectorizer đã huấn luyện
+    text_features = vectorizer.transform(text_list)
+    predictions = model.predict(text_features)
+    probabilities = model.predict_proba(text_features) # Lấy xác suất
+
+    # Chuyển đổi nhãn số thành nhãn văn bản
+    predicted_labels = label_encoder.inverse_transform(predictions)
+
+    results = []
+    for i, text in enumerate(text_list):
+        prob_dict = {label_encoder.classes_[j]: probabilities[i][j] for j in range(len(label_encoder.classes_))}
+        results.append({
+            "comment": text,
+            "sentiment": predicted_labels[i],
+            "probabilities": prob_dict
+        })
+    return results
+
+print("\n--- Dự đoán cảm xúc cho các bình luận mới (Naive Bayes) ---")
 new_comments = [
     "Sản phẩm này thật tuyệt vời, tôi rất thích nó!",
     "Dịch vụ quá tệ, không đáng tiền chút nào.",
     "Bình luận này không có cảm xúc cụ thể.",
     "Tôi không chắc chắn về sản phẩm này.",
-    "Khá tốt, nhưng có thể cải thiện thêm."
+    "Khá tốt, nhưng có thể cải thiện thêm.",
+    "Tôi đã đặt hàng nhưng chưa nhận được, rất thất vọng.",
+    "Chất lượng ổn, phù hợp với giá tiền."
 ]
 
-predicted_sentiments, probabilities = predict_sentiment(new_comments, model, tokenizer, max_len, label_encoder)
+predictions_nb = predict_sentiment_nb(new_comments, model, vectorizer, label_encoder)
 
-for i, comment in enumerate(new_comments):
-    sentiment = predicted_sentiments[i]
-    prob = probabilities[i]
-    print(f"Bình luận: \"{comment}\"")
-    print(f"Cảm xúc dự đoán: {sentiment}")
-    print(f"Xác suất: {prob}")
-    print(f"({label_encoder.classes_[0]}: {prob[0]:.2f}, {label_encoder.classes_[1]}: {prob[1]:.2f}, {label_encoder.classes_[2]}: {prob[2]:.2f})")
+for result in predictions_nb:
+    print(f"Bình luận: \"{result['comment']}\"")
+    print(f"Cảm xúc dự đoán: {result['sentiment']}")
+    print("Xác suất:")
+    for label, prob in result['probabilities'].items():
+        print(f"  {label}: {prob:.2f}")
     print("-" * 30)
-# --- Lưu mô hình và các đối tượng tiền xử lý ---
-model.save('sentiment_cnn_model.h5')
-joblib.dump(tokenizer, 'tokenizer.pkl')
-joblib.dump(label_encoder, 'label_encoder.pkl')
-joblib.dump(max_len, 'max_len.pkl') # Lưu cả max_len để sử dụng khi pad_sequences
-
-print("\nĐã lưu mô hình và các đối tượng tiền xử lý.")
